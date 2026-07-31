@@ -147,7 +147,7 @@ async def messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
     cur.execute("""
-    SELECT username, user_id, message
+    SELECT id, username, user_id, message
     FROM messages
     ORDER BY id DESC
     LIMIT 10
@@ -175,11 +175,12 @@ async def messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = "📩 آخرین پیام‌ها:\n\n"
 
 
-    for username, user_id, message in rows:
-
+    for msg_id, username, user_id, message in rows:
+    
         text += (
+            f"🆔 {msg_id}\n"
             f"👤 {username}\n"
-            f"🆔 {user_id}\n"
+            f"🆔 کاربر: {user_id}\n"
             f"💬 {message}\n"
             "──────────\n"
         )
@@ -188,6 +189,35 @@ async def messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 
+async def delete_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("❌ شما دسترسی ندارید.")
+        return
+
+    if len(context.args) != 1:
+        await update.message.reply_text("استفاده صحیح:\n/delete ID")
+        return
+
+    message_id = int(context.args[0])
+
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
+
+    cur.execute(
+        "DELETE FROM messages WHERE id = %s",
+        (message_id,)
+    )
+
+    conn.commit()
+
+    if cur.rowcount == 0:
+        await update.message.reply_text("❌ چنین پیامی پیدا نشد.")
+    else:
+        await update.message.reply_text("✅ پیام حذف شد.")
+
+    cur.close()
+    conn.close()
 
 # =====================
 # Run Bot
@@ -219,6 +249,13 @@ app.add_handler(
     MessageHandler(
         filters.TEXT & ~filters.COMMAND,
         receive_message
+    )
+)
+
+app.add_handler(
+    CommandHandler(
+        "delete",
+        delete_message
     )
 )
 
