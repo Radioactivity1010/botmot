@@ -189,6 +189,80 @@ async def messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 
+async def get_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text(
+            "❌ شما دسترسی ندارید."
+        )
+        return
+
+
+    if len(context.args) != 1:
+        await update.message.reply_text(
+            "استفاده صحیح:\n/message ID"
+        )
+        return
+
+
+    try:
+        message_id = int(context.args[0])
+
+    except:
+        await update.message.reply_text(
+            "❌ آیدی پیام باید عدد باشد."
+        )
+        return
+
+
+
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
+
+
+    cur.execute(
+        """
+        SELECT id, username, user_id, message, created_at
+        FROM messages
+        WHERE id = %s
+        """,
+        (message_id,)
+    )
+
+
+    result = cur.fetchone()
+
+
+    cur.close()
+    conn.close()
+
+
+
+    if not result:
+
+        await update.message.reply_text(
+            "❌ این پیام پیدا نشد."
+        )
+
+        return
+
+
+
+    msg_id, username, user_id, message, created_at = result
+
+
+    text = (
+        f"🆔 شماره پیام: {msg_id}\n"
+        f"👤 کاربر: {username}\n"
+        f"🔢 آیدی کاربر: {user_id}\n"
+        f"📅 تاریخ: {created_at}\n\n"
+        f"💬 پیام:\n{message}"
+    )
+
+
+    await update.message.reply_text(text)
+
+
 async def delete_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.effective_user.id != ADMIN_ID:
@@ -286,6 +360,13 @@ app.add_handler(
     CommandHandler(
         "messages",
         messages
+    )
+)
+
+app.add_handler(
+    CommandHandler(
+        "message",
+        get_message
     )
 )
 
