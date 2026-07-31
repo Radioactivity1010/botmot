@@ -196,25 +196,70 @@ async def delete_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if len(context.args) != 1:
-        await update.message.reply_text("استفاده صحیح:\n/delete ID")
+        await update.message.reply_text(
+            "استفاده صحیح:\n"
+            "/delete ID\n"
+            "یا\n"
+            "/delete all"
+        )
         return
 
-    message_id = int(context.args[0])
+    target = context.args[0]
+
 
     conn = psycopg2.connect(DATABASE_URL)
     cur = conn.cursor()
 
-    cur.execute(
-        "DELETE FROM messages WHERE id = %s",
-        (message_id,)
-    )
 
-    conn.commit()
+    # حذف همه پیام‌ها
+    if target.lower() == "all":
 
-    if cur.rowcount == 0:
-        await update.message.reply_text("❌ چنین پیامی پیدا نشد.")
+        cur.execute("DELETE FROM messages")
+
+        deleted = cur.rowcount
+
+        conn.commit()
+
+        await update.message.reply_text(
+            f"✅ همه پیام‌ها پاک شدند.\n"
+            f"تعداد حذف شده: {deleted}"
+        )
+
+
+    # حذف یک پیام خاص
     else:
-        await update.message.reply_text("✅ پیام حذف شد.")
+
+        try:
+            message_id = int(target)
+
+        except:
+            await update.message.reply_text(
+                "❌ آیدی پیام باید عدد باشد."
+            )
+
+            cur.close()
+            conn.close()
+            return
+
+
+        cur.execute(
+            "DELETE FROM messages WHERE id = %s",
+            (message_id,)
+        )
+
+        conn.commit()
+
+
+        if cur.rowcount == 0:
+            await update.message.reply_text(
+                "❌ چنین پیامی پیدا نشد."
+            )
+
+        else:
+            await update.message.reply_text(
+                "✅ پیام حذف شد."
+            )
+
 
     cur.close()
     conn.close()
