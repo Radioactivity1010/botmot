@@ -8,18 +8,24 @@ from telegram.ext import (
 )
 
 import os
-import json
 import threading
+import psycopg2
+from datetime import datetime
 from flask import Flask
 
 
-ADMIN_ID = int(os.getenv("ID"))
+# =====================
+# Environment Variables
+# =====================
+
 TOKEN = os.getenv("TOKEN")
+DATABASE_URL = os.getenv("DATABASE_URL")
+ADMIN_ID = int(os.getenv("ID"))
 
 
-# -------------------
-# Flask برای Render
-# -------------------
+# =====================
+# Flask for Render
+# =====================
 
 server = Flask(__name__)
 
@@ -37,48 +43,60 @@ def run_server():
     )
 
 
-# -------------------
-# ذخیره پیام‌ها
-# -------------------
+# =====================
+# PostgreSQL
+# =====================
 
-FILE = "messages.json"
+def init_db():
+
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS messages (
+        id SERIAL PRIMARY KEY,
+        user_id BIGINT,
+        username TEXT,
+        message TEXT,
+        created_at TIMESTAMP
+    )
+    """)
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
 
 
 def save_message(user_id, username, message):
 
-    try:
-        with open(FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
 
-    except:
-        data = []
-
-
-    data.append({
-
-        "user_id": user_id,
-
-        "username": username
-        if username else "بدون یوزرنیم",
-
-        "message": message
-
-    })
-
-
-    with open(FILE, "w", encoding="utf-8") as f:
-        json.dump(
-            data,
-            f,
-            ensure_ascii=False,
-            indent=4
+    cur.execute(
+        """
+        INSERT INTO messages
+        (user_id, username, message, created_at)
+        VALUES (%s, %s, %s, %s)
+        """,
+        (
+            user_id,
+            username if username else "بدون یوزرنیم",
+            message,
+            datetime.now()
         )
+    )
+
+    conn.commit()
+
+    cur.close()
+    conn.close()
 
 
 
-# -------------------
-# دستور Start
-# -------------------
+# =====================
+# Start Command
+# =====================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -90,58 +108,79 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-# -------------------
-# دریافت پیام
-# -------------------
+# =====================
+# Receive Messages
+# =====================
 
 async def receive_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user = update.message.from_user
 
-
     save_message(
-
         user.id,
-
         user.username,
-
         update.message.text
-
     )
-
 
     await update.message.reply_text(
         "✅ پیام شما با موفقیت ذخیره شد."
     )
 
+
+
+# =====================
+# Admin Messages
+# =====================
+
 async def messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.effective_user.id != ADMIN_ID:
+
         await update.message.reply_text(
             "❌ شما دسترسی ندارید."
         )
         return
 
 
-    try:
-        with open(FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
 
-    except:
+
+    cur.execute("""
+    SELECT username, user_id, message
+    FROM messages
+    ORDER BY id DESC
+    LIMIT 10
+    """)
+
+
+    rows = cur.fetchall()
+
+
+    cur.close()
+    conn.close()
+
+
+
+    if not rows:
+
         await update.message.reply_text(
             "هنوز پیامی ذخیره نشده."
         )
+
         return
 
 
-    text = "📩 پیام‌های ذخیره شده:\n\n"
+
+    text = "📩 آخرین پیام‌ها:\n\n"
 
 
-    for item in data[-10:]:
+    for username, user_id, message in rows:
+
         text += (
-            f"👤 {item['username']}\n"
-            f"🆔 {item['user_id']}\n"
-            f"💬 {item['message']}\n"
+            f"👤 {username}\n"
+            f"🆔 {user_id}\n"
+            f"💬 {message}\n"
             "──────────\n"
         )
 
@@ -150,9 +189,12 @@ async def messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-# -------------------
-# ساخت بات
-# -------------------
+# =====================
+# Run Bot
+# =====================
+
+init_db()
+
 
 app = Application.builder().token(TOKEN).build()
 
@@ -166,6 +208,14 @@ app.add_handler(
 
 
 app.add_handler(
+    CommandHandler(
+        "messages",
+        messages
+    )
+)
+
+
+app.add_handler(
     MessageHandler(
         filters.TEXT & ~filters.COMMAND,
         receive_message
@@ -174,18 +224,10 @@ app.add_handler(
 
 
 
-# اجرای Flask
 threading.Thread(
     target=run_server
 ).start()
 
-app.add_handler(
-    CommandHandler(
-        "messages",
-        messages
-    )
-)
 
 
-# اجرای تلگرام
 app.run_polling()
