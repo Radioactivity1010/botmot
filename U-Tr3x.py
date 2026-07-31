@@ -13,7 +13,7 @@ import threading
 from flask import Flask
 
 
-ADMIN_ID = int(os.getenv("ID")
+ADMIN_ID = int(os.getenv("ID"))
 TOKEN = os.getenv("TOKEN")
 
 
